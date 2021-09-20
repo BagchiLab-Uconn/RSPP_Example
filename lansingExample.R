@@ -2,8 +2,9 @@
 
 rm(list = ls())
 
+require(spatstat)
 require(RSPPlme4)
-require(dplyr)
+require(tidyverse)
 
 # load dataset ####
 
@@ -15,6 +16,7 @@ df_data <- as.data.frame(data)
 
 # as "misc" is not a single tree species, we will not use it in this example
 df_data <- df_data[!df_data$marks %in% "misc",]
+df_data$marks <- as.factor(df_data$marks)
 
 # organize dataset ####
 
@@ -42,8 +44,8 @@ subPlots <- data.frame(subPlotID = (1:(totalPlots)^2),
 df_data$xmin <- df_data$x %/% xy[2] * xy[2]
 df_data$ymin <- df_data$y %/% xy[2] * xy[2]
 divided_data <- merge(df_data, subPlots, by = c("xmin","ymin"))
-divided_data$x <- divided_data$x - divided_data$xmin
-divided_data$y   <- divided_data$y - divided_data$ymin
+divided_data$x <- (divided_data$x - divided_data$xmin) * 100 / xy[2]
+divided_data$y   <- (divided_data$y - divided_data$ymin) * 100 / xy[2]
 divided_data$xmin <- NULL
 divided_data$ymin <- NULL
 
@@ -63,7 +65,7 @@ hf <- as.hyperframe(grb)
 
 getPPP <- function(dat){
   dat <- dat[!duplicated(dat[, c("x", "y")]),]
-  pppx <- ppp(x=dat$x, y = dat$y, window = owin(x=c(0,xy[2]), y=c(0, xy[2])))
+  pppx <- ppp(x=dat$x, y = dat$y, window = owin(x=c(0,100), y=c(0, 100)))
 }
 spp <- lapply(split(ourPlots, 
                     f = list(ourPlots$subPlotID, ourPlots$marks), 
@@ -82,10 +84,20 @@ dat$K <-  lapply(dat$pppx, Kest, r = r, correction = "border")
 dat$wts <- lapply(dat$pppx, kfuncWeightsCalc, r=r,
                   correction="border", type="nx_A")
 
-# stall out here due to spatstat issue
+# check none of the weights are 0
+which(sapply(dat$wts, function(x) any(x ==0)))
 
+# remove those rows
+dat <- dat[!(sapply(dat$wts, function(x) any(x ==0))),]
 
+# run model
+mod_sm <- klmerHyper(formula = K ~ 1  + marks + (1|subPlotID),
+                     r=r, hyper=dat,  correction='border', weights = wts,
+                     na.action="na.omit")
 
+# plot models?
+
+# I don't think there's any effects...
 
 
 
