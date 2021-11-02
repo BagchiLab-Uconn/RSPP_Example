@@ -142,27 +142,48 @@ Now, we can preform our RSPP on the sub-sampled plots
 # distances at which we will measure (a sequence spanning 1/4 of one edge of the plot)
 r <-  0:24
 
-# create the k estimate
-hf$k <-  lapply(hf$pppx, Kest, r = r, correction = "border")
-
-# add in weights
-hf$wts <- lapply(hf$pppx, kfuncWeightsCalc, r=r,
-                  correction="border", type="nx_A")
-
-# remove rows where the weights are 0 (should be none because we removed plots with <3 points)
-hf <- hf[!(sapply(hf$wts, function(x) any(x ==0))),]
+# # create the k estimate
+# hf$k <-  lapply(hf$pppx, Kest, r = r, correction = "border")
+# 
+# # add in weights
+# hf$wts <- lapply(hf$pppx, kfuncWeightsCalc, r=r,
+#                   correction="border", type="nx_A")
+# 
+# # remove rows where the weights are 0 (should be none because we removed plots with <3 points)
+# hf <- hf[!(sapply(hf$wts, function(x) any(x ==0))),]
 
 # run model
-mod_sm <- klmer(formula = k ~ 1  + marks + (1|subPlotID),
-                     r=r, hyper=hf,  correction='border', weights = 'wts',
+# mod_sm <- klmer(formula = k ~ 1  + marks + (1|subPlotID),
+#                      r=r, hyper=hf,  correction='border', weights = 'wts',
+#                      na.action="na.omit")
+
+mod_sm <- klmer(formula = pppx ~ 1  + marks + (1|subPlotID),
+                     r=r, hyper=hf,  correction='border', weights_type = "nx_A",
                      na.action="na.omit")
 
 # plot models
 
 preddat <- expand.grid(marks = factor(c("blackoak", "hickory", "maple", "redoak", "whiteoak")))
-Xmat <- model.matrix(~marks, data=preddat)
-mod_sm_cis <- confint(mod_sm, level=0.95, lin_comb=Xmat, nboot=10, ncore=4, iseed=1234)
+# Xmat <- model.matrix(~marks, data=preddat)
+# mod_sm_cis <- confint(mod_sm, level=0.95, lin_comb=Xmat, nboot=10, ncore=4, iseed=1234)
+
+mod_sm_cis <- confint(mod_sm, level=0.95, newdata = preddat, nboot=100, ncore=4, iseed=1234)
+
 plot(mod_sm_cis)
+
+mod_sm_preds <- as.data.frame.table(mod_sm_cis$predictions)
+
+mod_sm_preds <- pivot_wider(mod_sm_preds, names_from = Var3, values_from = Freq) %>%
+  mutate(marks = preddat$marks[as.numeric(Var2)],
+         distance = as.numeric(as.character(Var1)))
+head(mod_sm_preds)
+
+ggplot(mod_sm_preds, aes(x = distance, y = est, ymin = lwr, ymax = upr)) + 
+         facet_wrap(~marks) + 
+         geom_ribbon(alpha = 0.1) +geom_path() +
+         ggthemes::theme_tufte() 
+       
+head(mod_sm_preds)
 
 # full plot analysis
 dd <- df_data %>%
