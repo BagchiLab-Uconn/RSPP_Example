@@ -105,7 +105,7 @@ p5 <- p5 + labs(tag ="C")
 ((p1 / p2 / p3) | (p4/p5)) + 
   plot_layout(widths = c(1.5, 2), guides = "collect") &
     theme(legend.position = "right")
-  
+
 
 
 

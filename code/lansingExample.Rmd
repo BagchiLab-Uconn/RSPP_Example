@@ -89,7 +89,7 @@ preddat <- expand.grid(marks = levels(hf$marks))
 mod_sm_cis <- confint(mod_sm, level=0.95,  newdata = preddat,  nboot=99, ncore=4, iseed=1234)
 
 anova(mod_sm, term = "marks", dists = 1:15, nboot = 499, ncore = 4, 
-      iseed = 1234)
+      iseed = 1234) 
 
 ```
 
