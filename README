@@ -1,0 +1,12 @@
+This repository includes code accompanying the paper in 
+Frontiers in Forests and Global Change, entitled 
+Replicated spatial point pattern analyses for ecological inference: 
+A tutorial using the RSPPlme4 package in R, by
+Robert Bagchi, Michael C. LaScaleia, Valerie R. Milici, Dipanjana Dalui.
+
+To run the code in this tutorial you will need to install the RSPPlme4 package. 
+First install the dependencies (spatstat, lme4, abind, tidyverse), 
+the devtools package and then install the package itself with
+devtools::install_github("Bagchilab-Uconn/RSPPlme4").
+
+

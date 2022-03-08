@@ -1,0 +1,187 @@
+---
+title: "RSPPlme4 simulated example"
+author: "Robert Bagchi, Michael C. LaScaleia, Valerie R. Milici, Dipanjana Dalui"
+date: '`r format(Sys.Date(), "%B %d, %Y")`'
+output: pdf_document
+---
+# Load Preliminaries
+
+First we need to load the packages for simulating datasets, running models, organizing and plotting outputs.
+
+```{r setup, warning=FALSE, message=FALSE}
+# devtools::install_github("Bagchilab-Uconn/RSPPlme4")
+library(RSPPlme4)
+library(spatstat)
+library(ggplot2)
+library(tidyverse)
+
+```
+
+# Data simulation
+
+Creation of the simulated data is performed in this chunk. We generate a response variable (the distribution of points within `ppp` objects) and a random effect (`ranef`) from two fixed effects (`f` and `x`).
+
+```{r Data simulation}
+# set seed
+set.seed(1234)
+
+# set number of points
+n <-  100
+
+# create random covariate x
+x <- runif(n = n, min = 0, max = 10)
+
+# randomly assign group a or b (covariate f)
+f <- sample(c("a", "b"), size = n, replace = TRUE)
+
+# assign replicate
+gr <- rep(1:10, each = n/10)
+
+# create hyperframe
+dat <- hyperframe(x = x, f = f, gr = gr)
+
+# create basis for response variable
+lin_pred1 <-  model.matrix(~ f + x, data = as.data.frame(dat, warn = FALSE)) %*%
+  c(0.05, 0.05, 0.01)
+
+# create response variable and add to hyperframe
+dat$ppx1 <- lapply(lin_pred1, function(sigma)
+                   rThomas(kappa =runif(n = 1, min = 3, max = 10),
+                           mu = 5, sigma = sigma))
+
+# create basis for random effect
+ranef <- exp(rnorm(n = 10, mean = 0, sd = 0.2) )
+
+# create random effect
+lin_pred2  <- lin_pred1 * ranef[dat$gr]
+
+# add random effect to hyperframe
+dat$ppx2 <- lapply(lin_pred2, function(sigma)
+  rThomas(kappa =runif(n = 1, min = 3, max = 10),
+          mu = 10, sigma = sigma))
+```
+
+# Models
+
+Here, we run three models: the intercept-only model, the fixed effect only model, and the mixed effects model. Further, the results of these three models are plotted below.
+
+## Intercept-only model
+
+We use the `klm' function with a model formula that only specifies an intercept. The code then computes and plots confidence intervals around the mean-K-function estimated by the model.
+
+```{r models_intercept}
+
+# model 1.1: intercept only
+mod1.1 <- klm(ppx1 ~ 1, hyper = dat, r = seq(0, 0.1, 0.02), 
+            correction = "border", weights_type = "nx_A")
+
+# generate confidence intervals for model 1.1
+mod1.1_ci <- confint(mod1.1, nboot=500, level = 0.95, iseed = 4321)
+
+# show model 1.1 confidence intervals
+print(mod1.1_ci)
+
+# plot of model 1.1 fixed effects
+pl <- plot(mod1.1_ci) 
+pl +  geom_function(fun = function(x) pi * x^2, linetype = "dotted") + 
+  labs(x = "Distance (r)", y = "K(r)") + ggthemes::theme_tufte() 
+
+```
+
+
+## Fixed-effects-only model
+
+In the next model, we modify the formula to include effects of `f` and `x` on the K-function. Once again, we fit the model and compute confidence intervals, then plot the parameter estimates.
+
+```{r models_fixed}
+
+# model 1.2: add in covariates f and x
+mod1.2 <- klm(ppx1 ~ f + x, hyper = dat, r = seq(0, 0.1, 0.01),
+            correction = "border", weights_type = "nx_A")
+
+# generate confidence intervals for model 1.2
+mod1.2_ci <- confint(mod1.2, nboot = 500, level = 0.99, iseed = 9876) 
+
+
+# plot of model 1.2 fixed effects
+plot(mod1.2_ci) + ggthemes::theme_tufte() 
+```
+
+It is also possible to generate predictions of the K-functions under specific combinations of covariates. We demonstrate that below. Note we plot predictions as L-functions to aid interpretability.
+
+```{r models_fixed_preds}
+# alternate creation of model 1.2 confidence intervals
+nd1 <- expand.grid(x = c(1, 5, 10),  f = c("a", "b"))
+mod1.2_ci <- confint(mod1.2, nboot = 500, level = 0.99, iseed = 9876, 
+                   newdata=nd1) 
+
+
+# make model 1.2 predictions able to be plotted
+preds1.2  <- as.data.frame.table(mod1.2_ci$predictions)
+preds1.2[, c("x", "f")] <- nd1[as.numeric(preds1.2$Var1), c("x", "f")]
+preds1.2 <- pivot_wider(preds1.2, names_from = Var3, values_from = Freq) %>%
+  rename("distance" = "Var2") %>%
+  select(-Var1) %>% mutate(distance = as.numeric(distance))
+
+K2L <- function(K) sqrt(K/pi)
+
+# plot model 1.2 predictions
+ggplot(preds1.2, aes(x = distance, y = K2L(est), ymin = K2L(lwr), ymax =K2L(upr), 
+                     group = as.factor(x))) +
+  geom_ribbon(alpha = 0.2, aes(fill = as.factor(x))) + 
+  geom_path(aes(color = as.factor(x))) +
+  facet_wrap(~f) + 
+  scale_color_brewer(palette="Dark2") + scale_fill_brewer(palette="Set2") +
+  ggthemes::theme_tufte() +
+  labs(x = "distance (r)", y = expression(italic(L(r))), color = "x", fill = "x")
+```
+
+
+# Mixed-effects models
+
+Often, replicates are not independent of each other - and that dependence needs to be accounted for to reduce spurious inferences (e.g., as a result of pseudoreplication or Simpson's paradox). The `klmer` function uses syntax from the `lme4` package for mixed effects models.
+
+
+```{r mixed_effects}
+# model 2: adding random effects
+mod2 <- klmer(ppx2 ~ 1 + f + x +  (1| gr), hyper = dat, r = seq(0, 0.1, 0.01),
+              correction = "border", weights_type = "nx_A")
+
+# generate confidence intervals for model 2
+mod2_ci <- confint(mod2, nboot = 500, ncore = 16)
+
+# show model 2 confidence intervals
+print(mod2_ci)  
+
+# plot model 2 fixed effects
+plot(mod2_ci) + ggthemes::theme_tufte() +
+  labs(x = "Distance (r)", y = "K(r)")
+```
+
+
+As in the case of the fixed-effects only models, it is possible to make predictions with associated confidence intervals for specific combinations of covariates. These are generated and plotted below. 
+
+
+```{r mixed_mods_preds}
+
+# alternative creation of model 2 confidence intervals
+mod2_ci <- confint(mod2, nboot = 99, ncore = 16, 
+                   newdata  = nd1)
+
+# make model 2 predictions able to be plotted
+preds2  <- as.data.frame.table(mod2_ci$predictions)
+preds2[, c("x", "f")] <- nd1[as.numeric(preds2$Var2), c("x", "f")]
+preds2 <- pivot_wider(preds2, names_from = Var3, values_from = Freq) %>%
+  rename("distance" = "Var1") %>%
+  mutate(distance = as.numeric(as.character(distance)))
+
+# plot model 2 predictions
+ggplot(preds2, aes(x = distance, y = K2L(est), ymin = K2L(lwr), ymax = K2L(upr), 
+                   colour = as.factor(x), fill = as.factor(x))) + facet_wrap(~f) + 
+  geom_ribbon(alpha = 0.1, color = NA, aes(group = as.factor(x))) +geom_path() +
+  scale_color_brewer(palette="Dark2") + scale_fill_brewer(palette="Set2") +
+  labs(x = "distance (r)", y = expression(italic(L(r))), color = "x", fill = "x") +
+  ggthemes::theme_tufte() 
+
+```
+
